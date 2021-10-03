@@ -1,12 +1,10 @@
 #include <ctype.h> 
-#include <stdio.h> 
+#include <stdio.h>
 #include <stdlib.h> 
 #include <termios.h> 
 #include <unistd.h> 
 #include <errno.h> 
-#include <sys/ioctl.h>
-
-
+#include <sys/ioctl.h> 
 
 #define CTRL_KEY(k) ((k) & 0x1f)
 
@@ -38,6 +36,12 @@ void enableRawMode() {
   atexit(disableRawMode); 
 
   struct termios raw = E.original;
+  raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON); 
+  raw.c_oflag &= ~(OPOST); 
+  raw.c_cflag |= ~(CS8);
+  raw.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG); 
+  raw.c_cc[VMIN] = 0; 
+  raw.c_cc[VTIME] = 1; 
   if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) {
     die("tcsetattr");
   }
@@ -80,7 +84,7 @@ int getCursorPosition(int *rows, int *columns) {
 }
 
 int getWindowSize(int *rows, int *columns) {
-  struct winsize ws; 
+  struct winsize ws;
   if(ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws)==-1 || ws.ws_col==0) {
     if (write(STDOUT_FILENO, "\x1b[999C\x1b[999B", 12)!=12) {
       return -1;
@@ -92,6 +96,20 @@ int getWindowSize(int *rows, int *columns) {
     *rows = ws.ws_row;
     return 0;
   }
+}
+
+void editorDrawRows() {
+  int y;
+  for (y=0; y<E.screenrows; y++) {
+    write(STDOUT_FILENO, "~\r\n", 3);
+  }
+}
+
+void editorRefreshScreen() {
+  write(STDOUT_FILENO, "\x1b[2J", 4);
+  write(STDOUT_FILENO, "\x1b[H", 3);
+  editorDrawRows();
+  write(STDOUT_FILENO, "\x1b[H", 3);
 }
 
 void editorProcessKeypress() {
@@ -117,17 +135,18 @@ int main()
   initialEditor();
   char c;
   while (1) {
+    editorRefreshScreen();
     editorProcessKeypress();
     char c = '\0';
     if (read(STDIN_FILENO, &c, 1) == -1 && errno != EAGAIN) {
       die("read");
     }
-    if (iscntrl(c)) 
+    if (iscntrl(c))
     {
-      printf("%d\r\n", c); 
+      printf("%d\r\n", c);
     }
     else {
-      printf("%d ('%c')\r\n", c, c);
+      printf("%d ('%c')\r\n", c, c); 
     }
     if (c == CTRL_KEY('q'))
     {
